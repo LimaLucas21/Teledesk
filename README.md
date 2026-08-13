@@ -18,6 +18,38 @@ Projeto prático de estudo end-to-end desenvolvido em **.NET 9**, **ASP.NET Core
 
 ---
 
+## 💻 Como Continuar / Rodar em uma Nova Máquina
+
+1. **Clonar o repositório:**
+   ```bash
+   git clone https://github.com/LimaLucas21/Teledesk.git
+   cd Teledesk
+   ```
+
+2. **Configurar as Credenciais Locais:**
+   Crie o arquivo `Teledesk.API/appsettings.Development.json` (que fica ignorado pelo `.gitignore`) com seu token do Telegram:
+   ```json
+   {
+     "Logging": {
+       "LogLevel": {
+         "Default": "Information",
+         "Microsoft.AspNetCore": "Warning"
+       }
+     },
+     "TelegramSettings": {
+       "Token": "SEU_TOKEN_TELEGRAM_AQUI"
+     }
+   }
+   ```
+
+3. **Restaurar e Executar o Projeto:**
+   ```bash
+   dotnet restore
+   dotnet run --project Teledesk.API/Teledesk.API.csproj
+   ```
+
+---
+
 ## 🗺️ Roadmap do Projeto
 
 - [x] **Fase 1: Foundation & Integração Básica com Telegram**
