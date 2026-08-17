@@ -54,7 +54,7 @@ Projeto prático de estudo end-to-end desenvolvido em **.NET 9**, **ASP.NET Core
 
 - [x] **Fase 1: Foundation & Integração Básica com Telegram**
   - [x] **Desafio 1.1:** Setup da Solution `.sln`, estrutura de pastas, configuração do `appsettings.json` e instalação do pacote `Telegram.Bot`.
-  - [ ] **Desafio 1.2:** Configuração da Injeção de Dependência (`ITelegramBotClient`) em `Program.cs` e criação do `BotController.cs`.
+  - [x] **Desafio 1.2:** Configuração da Injeção de Dependência (`ITelegramBotClient`) em `Program.cs` e criação do `BotController.cs`.
 - [ ] **Fase 2: Modelagem de Dados & Persistência (EF Core)**
 - [ ] **Fase 3: Motor de Estado da Conversa (URA vs Atendimento Humano)**
 - [ ] **Fase 4: Servidor SignalR para Comunicação em Tempo Real**
