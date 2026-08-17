@@ -1,4 +1,6 @@
+using Microsoft.EntityFrameworkCore;
 using Telegram.Bot;
+using Teledesk.API.Data;
 
 namespace Teledesk.API
 {
@@ -7,6 +9,12 @@ namespace Teledesk.API
         public static void Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
+
+            // Configuração do Entity Framework Core com SQL Server
+            var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+            builder.Services.AddDbContext<TeledeskDbContext>(options =>
+                options.UseSqlServer(connectionString));
+
             var token = builder.Configuration["TelegramSettings:Token"];
             // Add services to the container.
 

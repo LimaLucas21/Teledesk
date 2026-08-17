@@ -55,7 +55,10 @@ Projeto prático de estudo end-to-end desenvolvido em **.NET 9**, **ASP.NET Core
 - [x] **Fase 1: Foundation & Integração Básica com Telegram**
   - [x] **Desafio 1.1:** Setup da Solution `.sln`, estrutura de pastas, configuração do `appsettings.json` e instalação do pacote `Telegram.Bot`.
   - [x] **Desafio 1.2:** Configuração da Injeção de Dependência (`ITelegramBotClient`) em `Program.cs` e criação do `BotController.cs`.
-- [ ] **Fase 2: Modelagem de Dados & Persistência (EF Core)**
+- [x] **Fase 2: Modelagem de Dados & Persistência (EF Core)**
+  - [x] **Desafio 2.1:** Criação dos modelos de domínio (`Contato`, `Atendente`, `Atendimento`, `Mensagem` e Enums).
+  - [x] **Desafio 2.2:** Instalação do EF Core SQL Server e criação do `TeledeskDbContext` com Fluent API.
+  - [x] **Desafio 2.3:** Geração de Migrations e criação do Banco de Dados no SQL Server.
 - [ ] **Fase 3: Motor de Estado da Conversa (URA vs Atendimento Humano)**
 - [ ] **Fase 4: Servidor SignalR para Comunicação em Tempo Real**
 - [ ] **Fase 5: Frontend Desktop com WinForms (Painel do Atendente)**
