@@ -1,0 +1,100 @@
+===============================================================================
+                     TELEDESK - RESUMO TÉCNICO E GUIA DE USO
+                     Fases 1 a 4: Telegram, MySQL, URA e SignalR
+===============================================================================
+
+1. O QUE FOI IMPLEMENTADO
+-------------------------------------------------------------------------------
+O Teledesk evoluiu para uma plataforma de atendimento ao cliente multicanal
+completamente funcional no backend:
+
+- FASE 1: Integração com o Telegram via Webhook HTTP e injeção do ITelegramBotClient.
+- FASE 2: Modelagem de dados e persistência relacional com Entity Framework Core 
+          usando MySQL (provedor Pomelo) e migrations automáticas.
+- FASE 3: Motor de Estado da Conversa (URA interativa) gerenciando:
+          * Reconhecimento/cadastro automático de Contatos (pelo TelegramChatId).
+          * Abertura/controle de Atendimentos ativos por status.
+          * Histórico persistido de todas as Mensagens trocadas.
+          * Menu de URA automático com opções de autoatendimento e transbordo
+            para fila de espera humana (Status: AguardandoAtendente).
+- FASE 4: Servidor SignalR para Comunicação em Tempo Real:
+          * Criação do AtendimentoHub no endpoint "/hubs/atendimento".
+          * Disparo de eventos push em tempo real: "NovaConversaNaFila",
+            "NovaMensagemRecebida", "AtendimentoAssumido", "AtendimentoFinalizado".
+          * Ações bidirecionais para os atendentes: assumir atendimento, enviar
+            respostas diretamente para o Telegram do cliente e finalizar o chamado.
+          * DTOs desacoplados (AtendimentoDto, MensagemDto) para transporte limpo.
+
+
+2. COMO FOI IMPLEMENTADO (ARQUITETURA)
+-------------------------------------------------------------------------------
+A solução foi desenhada seguindo Clean Code e princípios SOLID:
+
+- Camada de Controle (Controllers/BotController.cs):
+  Recebe o webhook HTTP do Telegram e delega o processamento para o serviço
+  de domínio, respondendo 200 OK imediatamente.
+
+- Camada de Serviço (Services/ConversationService.cs):
+  Implementa a interface IConversationService e centraliza as regras de negócio:
+  * Valida se a mensagem possui texto válido.
+  * Busca ou cadastra o Contato no banco de dados.
+  * Busca ou inicia um Atendimento com status EmUra.
+  * Salva a mensagem recebida no MySQL (OrigemMensagem.Cliente).
+  * Executa a Máquina de Estados:
+    - Se EmUra: processa as opções digitadas pelo cliente e envia mensagens
+      automáticas ou altera o status para AguardandoAtendente.
+    - Se AguardandoAtendente ou EmAtendimento: emite o evento SignalR
+      "NovaMensagemRecebida" diretamente para os operadores conectados.
+
+- Camada de Tempo Real (Hubs/AtendimentoHub.cs & DTOs/):
+  Hub do SignalR que expõe métodos remotos (RPC) para o futuro cliente Desktop
+  (WinForms) e dispara eventos via WebSocket para todos os operadores.
+
+- Camada de Persistência (Data/TeledeskDbContext.cs & Migrations/):
+  Contexto do EF Core configurado com Fluent API e mapeamento de chaves
+  estrangeiras, índices únicos e tipos compatíveis com MySQL 8+.
+
+
+3. COMO USAR E TESTAR
+-------------------------------------------------------------------------------
+
+A) CONFIGURAÇÃO INICIAL DO BANCO E TELEGRAM:
+   1. Certifique-se de que o seu servidor MySQL esteja rodando (Porta 3306).
+   2. Ajuste as credenciais no arquivo `Teledesk.API/appsettings.json` ou
+      `Teledesk.API/appsettings.Development.json`:
+      - "DefaultConnection": "Server=localhost;Port=3306;Database=teledesk_db;Uid=root;Pwd=SUA_SENHA;"
+      - "Token": "SEU_TOKEN_TELEGRAM_AQUI"
+
+B) APLICAR AS MIGRATIONS NO MYSQL:
+   Execute no terminal (na raiz do projeto):
+   $ dotnet ef database update --project Teledesk.API
+
+C) EXECUTAR A API:
+   $ dotnet run --project Teledesk.API/Teledesk.API.csproj
+   A API ficará disponível em http://localhost:5000 (ou porta configurada).
+
+D) TESTE DO FLUXO TELEGRAM / URA:
+   1. Ao enviar qualquer mensagem para o seu Bot no Telegram (ex: "/start"):
+      - O bot responde com o Menu de Boas-Vindas da URA.
+   2. Se o usuário digitar "1":
+      - O bot responde com a mensagem automática de horários de atendimento.
+   3. Se o usuário digitar "2":
+      - O bot avisa que transferiu para a fila de espera.
+      - O status no banco muda para "AguardandoAtendente".
+      - O Hub do SignalR dispara o evento "NovaConversaNaFila" para os atendentes.
+
+E) ENDPOINT DO SIGNALR:
+   - URL do Hub: `http://localhost:5000/hubs/atendimento`
+   - Métodos disponíveis para o cliente WinForms chamar:
+     * `ObterFilaAtendimento()`
+     * `ObterHistoricoMensagens(int atendimentoId)`
+     * `AssumirAtendimento(int atendimentoId, int atendenteId)`
+     * `EnviarMensagemParaCliente(int atendimentoId, string texto)`
+     * `FinalizarAtendimento(int atendimentoId)`
+   - Eventos que o cliente WinForms deve escutar:
+     * `NovaConversaNaFila` -> (AtendimentoDto)
+     * `NovaMensagemRecebida` -> (MensagemDto)
+     * `AtendimentoAssumido` -> (AtendimentoDto)
+     * `AtendimentoFinalizado` -> (int atendimentoId)
+
+===============================================================================
