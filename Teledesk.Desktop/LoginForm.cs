@@ -20,36 +20,51 @@ namespace Teledesk.Desktop
         public LoginForm()
         {
             InitializeComponent();
+            txtSenha.UseSystemPasswordChar = true;
+            this.AcceptButton = btnEntrar;
         }
 
         private async void btnEntrar_Click(object sender, EventArgs e)
         {
             string email = txtEmail.Text.Trim();
+            string senha = txtSenha.Text;
 
-            if (string.IsNullOrEmpty(email))
+            if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(senha))
             {
                 MessageBox.Show("Credenciais Incorretas!");
                 return;
             }
-
             try
             {
+                btnEntrar.Enabled = false;
+                btnEntrar.Text = "Entrando...";
                 using var client = new HttpClient();
-                var atendente = await client.GetFromJsonAsync<AtendenteModel>($"http://localhost:5000/api/atendentes/login?email={email}");
-                if (atendente != null)
+                var response = await client.PostAsJsonAsync("http://localhost:5000/api/atendentes/login", new
                 {
+                    email = email,
+                    senha = senha
+                });
+                if (response.IsSuccessStatusCode)
+                {
+                    var atendente = await response.Content.ReadFromJsonAsync<AtendenteModel>();
                     this.AtendenteLogado = atendente;
                     this.DialogResult = DialogResult.OK;
                     this.Close();
                 }
                 else
                 {
-                    MessageBox.Show("Atendente não encontrado!");
+                    var mensagemErro = await response.Content.ReadAsStringAsync();
+                    MessageBox.Show(mensagemErro, "Falha no Login", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Erro ao conectar com a API: {ex.Message}");
+                MessageBox.Show($"Erro ao conectar com a API: {ex.Message}", "Erro de Conexão", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                btnEntrar.Enabled = true;
+                btnEntrar.Text = "Entrar";
             }
         }
     }

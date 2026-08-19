@@ -43,6 +43,11 @@ namespace Teledesk.API.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("varchar(150)");
 
+                    b.Property<string>("Senha")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 

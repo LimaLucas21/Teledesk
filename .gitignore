@@ -20,6 +20,7 @@ artifacts/
 .env
 *.env
 appsettings.Development.json
+COMANDOS_DOCKER_MYSQL.txt
 
 # NuGet Packages
 *.nupkg

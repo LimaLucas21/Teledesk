@@ -35,6 +35,7 @@ namespace Teledesk.API.Data
                 entity.HasIndex(a => a.Email).IsUnique();
                 entity.Property(a => a.Nome).IsRequired().HasMaxLength(150);
                 entity.Property(a => a.Email).IsRequired().HasMaxLength(150);
+                entity.Property(a => a.Senha).IsRequired().HasMaxLength(150);
             });
 
             // Mapeamento da Entidade Atendimento

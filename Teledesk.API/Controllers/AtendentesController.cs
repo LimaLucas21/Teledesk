@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Teledesk.API.Data;
 using Teledesk.API.Models;
+using Teledesk.API.DTOs;
 
 namespace Teledesk.API.Controllers
 {
@@ -17,31 +18,33 @@ namespace Teledesk.API.Controllers
         }
 
         // GET: api/atendentes/login?email=lucas@teledesk.com
-        [HttpGet("login")]
-        public async Task<IActionResult> Login([FromQuery] string email)
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] LoginDTO dto)
         {
-            if (string.IsNullOrWhiteSpace(email))
+            if (string.IsNullOrWhiteSpace(dto.Email))
                 return BadRequest("O e-mail é obrigatório.");
 
             var atendente = await _context.Atendentes
-                .FirstOrDefaultAsync(a => a.Email.ToLower() == email.Trim().ToLower());
+                .FirstOrDefaultAsync(a => a.Email.ToLower() == dto.Email.Trim().ToLower());
 
             if (atendente == null)
             {
-                // Se a tabela estiver vazia, cria um atendente de teste automaticamente
-                if (!await _context.Atendentes.AnyAsync())
+                // Se o atendente não existir, cadastra automaticamente para facilitar o desenvolvimento
+                var nomeExibicao = dto.Email.Contains('@') ? dto.Email.Split('@')[0] : "Atendente";
+                atendente = new Atendente
                 {
-                    atendente = new Atendente
-                    {
-                        Nome = "Lucas Lima (Atendente)",
-                        Email = email.Trim().ToLower()
-                    };
-                    _context.Atendentes.Add(atendente);
-                    await _context.SaveChangesAsync();
-                    return Ok(atendente);
-                }
+                    Nome = char.ToUpper(nomeExibicao[0]) + nomeExibicao.Substring(1),
+                    Email = dto.Email.Trim().ToLower(),
+                    Senha = dto.Senha
+                };
+                _context.Atendentes.Add(atendente);
+                await _context.SaveChangesAsync();
+                return Ok(atendente);
+            }
 
-                return NotFound("Atendente não encontrado.");
+            if (atendente.Senha != dto.Senha)
+            {
+                return Unauthorized("Senha Incorreta");
             }
 
             return Ok(atendente);

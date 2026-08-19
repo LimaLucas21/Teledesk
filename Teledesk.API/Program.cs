@@ -41,6 +41,9 @@ namespace Teledesk.API
 
             builder.Services.AddSingleton<ITelegramBotClient>(sp => new TelegramBotClient(token!));
             builder.Services.AddScoped<IConversationService, ConversationService>();
+            builder.Services.AddHostedService<TelegramPollingService>();
+
+            builder.WebHost.UseUrls("http://localhost:5000");
                 
             var app = builder.Build();
 
@@ -50,7 +53,10 @@ namespace Teledesk.API
                 app.MapOpenApi();
             }
 
-            app.UseHttpsRedirection();
+            if (!app.Environment.IsDevelopment())
+            {
+                app.UseHttpsRedirection();
+            }
             app.UseCors("AllowAll");
             app.UseAuthorization();
 
