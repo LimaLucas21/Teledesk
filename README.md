@@ -1,20 +1,30 @@
-# 📞 Teledesk - Sistema de Atendimento Multi-Atendente integrado ao Telegram
+# 💬 Teledesk - Sistema de Atendimento Multi-Atendente e Multi-Setor integrado ao WhatsApp
 
-Projeto prático de estudo end-to-end desenvolvido em **.NET 9**, **ASP.NET Core Web API**, **SignalR**, **Entity Framework Core (MySQL)** e **Windows Forms (WinForms)**.
+Projeto prático de estudo end-to-end desenvolvido em **.NET 9**, **ASP.NET Core Web API**, **JWT**, **SignalR**, **Entity Framework Core (MySQL / Pomelo)** e **Windows Forms (WinForms)**.
+
+> 📋 **Plano de Evolução Completo:** Consulte o documento [`PLANO_DE_ACAO.md`](./PLANO_DE_ACAO.md) para ver o diagnóstico da base atual, a arquitetura alvo, a modelagem multi-setor/multi-número e todas as fases planejadas.
 
 ---
 
 ## 🏗️ Arquitetura Geral
 
 ```text
-[ Cliente (Telegram) ] 
-       │
-       ▼ (Webhook HTTP)
-[ ASP.NET Core Web API ] ◄──► [ MySQL (EF Core / Pomelo) ]
-       │
-       ▼ (SignalR WebSockets / Push)
-[ WinForms Desktop (Atendentes Humanos) ]
+[ Cliente (WhatsApp) ]
+        │
+        ▼ (Webhook HTTP - WhatsApp Cloud API / Meta)
+[ ASP.NET Core Web API (.NET 9 + JWT + SignalR por Setor) ] ◄──► [ MySQL (EF Core / Pomelo) ]
+        │
+        ▼ (REST + SignalR WebSockets autenticados via JWT)
+[ WinForms Desktop - Teledesk.Desktop (Atendentes & Admin) ]
 ```
+
+### Principais Capacidades Planejadas na Evolução
+- **Autenticação Segura com JWT:** Evoluir o login atual (que usa senha em texto puro) para hash seguro, perfis (`Atendente` / `Admin`) e proteção via JWT Bearer para API e SignalR.
+- **Migração para WhatsApp Cloud API (Oficial da Meta):** Recebimento via Webhook oficial e envio via Graph API por `PhoneNumberId`.
+- **Atendimento Multi-Setor com Número Único ou Dedicado:**
+  - **Número compartilhado:** vários setores/atendentes usam o mesmo número; o cliente escolhe o setor via URA dinâmica e entra na fila do setor escolhido.
+  - **Número dedicado por setor:** um número específico pode ser vinculado a um único setor, direcionando o cliente diretamente para a fila daquele setor.
+- **Filas por Setor em Tempo Real (SignalR):** Cada atendente recebe apenas os atendimentos e mensagens dos setores aos quais está vinculado.
 
 ---
 
@@ -27,7 +37,7 @@ Projeto prático de estudo end-to-end desenvolvido em **.NET 9**, **ASP.NET Core
    ```
 
 2. **Configurar as Credenciais Locais:**
-   Crie o arquivo `Teledesk.API/appsettings.Development.json` (que fica ignorado pelo `.gitignore`) com seu token do Telegram e a string de conexão do MySQL:
+   Crie o arquivo `Teledesk.API/appsettings.Development.json` (ignorado pelo `.gitignore`) com a string de conexão do MySQL (e, nas próximas fases, a chave JWT e as credenciais da **WhatsApp Cloud API**):
    ```json
    {
      "Logging": {
@@ -38,9 +48,6 @@ Projeto prático de estudo end-to-end desenvolvido em **.NET 9**, **ASP.NET Core
      },
      "ConnectionStrings": {
        "DefaultConnection": "Server=localhost;Port=3306;Database=teledesk_db;Uid=root;Pwd=sua_senha;"
-     },
-     "TelegramSettings": {
-       "Token": "SEU_TOKEN_TELEGRAM_AQUI"
      }
    }
    ```
@@ -56,31 +63,27 @@ Projeto prático de estudo end-to-end desenvolvido em **.NET 9**, **ASP.NET Core
 
 ## 🗺️ Roadmap do Projeto
 
-- [x] **Fase 1: Foundation & Integração Básica com Telegram**
-  - [x] **Desafio 1.1:** Setup da Solution `.sln`, estrutura de pastas, configuração do `appsettings.json` e instalação do pacote `Telegram.Bot`.
-  - [x] **Desafio 1.2:** Configuração da Injeção de Dependência (`ITelegramBotClient`) em `Program.cs` e criação do `BotController.cs`.
-- [x] **Fase 2: Modelagem de Dados & Persistência (EF Core com MySQL)**
-  - [x] **Desafio 2.1:** Criação dos modelos de domínio (`Contato`, `Atendente`, `Atendimento`, `Mensagem` e Enums).
-  - [x] **Desafio 2.2:** Instalação do EF Core MySQL (Pomelo) e criação do `TeledeskDbContext` com Fluent API.
-  - [x] **Desafio 2.3:** Geração de Migrations (`InitialCreateMySql`) para MySQL.
-- [x] **Fase 3: Motor de Estado da Conversa (URA vs Atendimento Humano)**
-  - [x] **Desafio 3.1:** Criação do `IConversationService` e `ConversationService`.
-  - [x] **Desafio 3.2:** Busca/Cadastro automático de `Contato`, criação de `Atendimento` ativo e persistência de mensagens.
-  - [x] **Desafio 3.3:** Máquina de estados da URA com menu interativo e transbordo para fila humana (`StatusAtendimento.AguardandoAtendente`).
-- [x] **Fase 4: Servidor SignalR para Comunicação em Tempo Real**
-  - [x] **Desafio 4.1:** Criação dos DTOs desacoplados (`AtendimentoDto`, `MensagemDto`).
-  - [x] **Desafio 4.2:** Criação do `AtendimentoHub` com métodos bidirecionais (`AssumirAtendimento`, `EnviarMensagemParaCliente`, `FinalizarAtendimento`, `ObterFilaAtendimento`, `ObterHistoricoMensagens`).
-  - [x] **Desafio 4.3:** Integração do `IHubContext<AtendimentoHub>` no `ConversationService` emitindo eventos em tempo real (`NovaConversaNaFila`, `NovaMensagemRecebida`).
-  - [x] **Desafio 4.4:** Mapeamento do endpoint `/hubs/atendimento` e política de CORS no `Program.cs`.
-- [ ] **Fase 5: Frontend Desktop com WinForms (Painel do Atendente)**
-- [ ] **Fase 6: Loop Completo (Atendimento Humano Bidirecional)**
-- [ ] **Fase 7: Resiliência, Refatoração, Logs e Defesa Técnica**
+### Base Inicial (Concluída com Telegram + MySQL)
+- [x] Setup da Solution `.sln`, estrutura inicial da API e integração básica inicial com Telegram.
+- [x] Migração para **MySQL (EF Core / Pomelo)** e criação das entidades iniciais (`Contato`, `Atendente`, `Atendimento`, `Mensagem`).
+- [x] Motor inicial de URA (`ConversationService`), `AtendimentoHub` (SignalR), login inicial (`AtendentesController`) e cliente WinForms (`Teledesk.Desktop`).
+
+### Evolução — WhatsApp Cloud API, Login JWT e Multi-Setor
+- [ ] **Fase 0:** Limpeza & Segurança (Saída do Telegram, remoção do `TelegramPollingService` e remoção de token exposto)
+- [ ] **Fase 1:** Evolução do Login para Autenticação Segura (`JWT`, hash de senha, `PerfilAtendente` e proteção do Hub/API)
+- [ ] **Fase 2:** Modelagem Multi-Setor e Multi-Número no MySQL (`Setor`, `NumeroWhatsApp`, vínculos N:N e CRUDs Admin)
+- [ ] **Fase 3:** Integração WhatsApp Cloud API (Webhook Meta + Envio via Graph API por `PhoneNumberId`)
+- [ ] **Fase 4:** Evolução do `ConversationService` (URA Dinâmica vs. Roteamento Direto por Número + Fila por Setor)
+- [ ] **Fase 5:** Evolução do `AtendimentoHub` (SignalR com Grupos por Setor e proteção contra concorrência)
+- [ ] **Fase 6:** Evolução do `Teledesk.Desktop` (Login JWT, Fila por Setor e Módulo Admin no WinForms)
+- [ ] **Fase 7:** Resiliência, Idempotência (`WhatsAppMessageId`), Logs Estruturados e Preparação para Produção
 
 ---
 
-## 🎯 Próximo Desafio: Fase 5 (Frontend Desktop com WinForms)
+## 🎯 Próximo Desafio: Fase 0 — Limpeza & Segurança (Saída do Telegram)
 
-Na Fase 5, criaremos a aplicação Windows Forms para os operadores:
-1. Conectar ao Hub do SignalR (`/hubs/atendimento`).
-2. Listar em tempo real a fila de atendimentos pendentes.
-3. Permitir que o operador assuma um atendimento, visualize o histórico e converse em tempo real com o cliente do Telegram.
+Antes de evoluir a autenticação para JWT e implementar a arquitetura multi-setor para WhatsApp:
+1. Remover o pacote `Telegram.Bot` de `Teledesk.API/Teledesk.API.csproj`.
+2. Remover `TelegramPollingService.cs`, `BotController.cs` e desacoplar `ITelegramBotClient` de `Program.cs`, `ConversationService.cs` e `AtendimentoHub.cs`.
+3. Revogar o token antigo do Telegram no `@BotFather` e removê-lo de `Teledesk.API/appsettings.json`.
+4. Limpar o arquivo `Teledesk.API/Teledesk.API.http`.
