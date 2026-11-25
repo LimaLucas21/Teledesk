@@ -1,4 +1,4 @@
-﻿using Teledesk.API.DTOs;
+using Teledesk.API.DTOs;
 
 namespace Teledesk.API.Services.Interfaces
 {
@@ -15,6 +15,7 @@ namespace Teledesk.API.Services.Interfaces
     public interface IConversationService
     {
         Task ProcessWebhookPayloadAsync(WhatsAppWebhookPayload payload);
+        Task ProcessWahaWebhookAsync(WahaWebhookPayload payload);
         Task<ResultadoProcessamentoWhatsApp> ProcessIncomingWhatsAppMessageAsync(
             string phoneNumberId,
             string waId,

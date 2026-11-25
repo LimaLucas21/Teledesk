@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Teledesk.API.Services.Interfaces;
 
@@ -27,39 +26,36 @@ namespace Teledesk.API.Services
             string? customAccessToken = null,
             CancellationToken cancellationToken = default)
         {
-            var accessToken = !string.IsNullOrWhiteSpace(customAccessToken)
+            var wahaBaseUrl = (_configuration["WhatsAppSettings:WahaBaseUrl"] ?? "http://localhost:3000").TrimEnd('/');
+            var defaultSession = _configuration["WhatsAppSettings:DefaultSession"] ?? "default";
+            var session = string.IsNullOrWhiteSpace(phoneNumberId) || phoneNumberId == "100000000000000"
+                ? defaultSession
+                : phoneNumberId.Trim();
+
+            var apiKey = !string.IsNullOrWhiteSpace(customAccessToken)
                 ? customAccessToken
-                : _configuration["WhatsAppSettings:DefaultAccessToken"];
+                : _configuration["WhatsAppSettings:WahaApiKey"];
 
-            var apiVersion = _configuration["WhatsAppSettings:ApiVersion"] ?? "v21.0";
-
-            // Modo simulação local caso o token da Meta ainda não esteja configurado
-            if (string.IsNullOrWhiteSpace(accessToken) || phoneNumberId == "100000000000000")
-            {
-                _logger.LogInformation(
-                    "📲 [WhatsApp Simulado | PhoneNumberId: {PhoneNumberId} -> {WaId}]: {Texto}",
-                    phoneNumberId, destinatarioWaId, texto);
-                return true;
-            }
+            var chatId = destinatarioWaId.Contains('@')
+                ? destinatarioWaId.Trim()
+                : $"{destinatarioWaId.Trim().TrimStart('+')}@c.us";
 
             try
             {
                 var client = _httpClientFactory.CreateClient("WhatsAppCloud");
-                var url = $"https://graph.facebook.com/{apiVersion}/{phoneNumberId}/messages";
+                var url = $"{wahaBaseUrl}/api/sendText";
 
                 using var request = new HttpRequestMessage(HttpMethod.Post, url);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                if (!string.IsNullOrWhiteSpace(apiKey))
+                {
+                    request.Headers.Add("X-Api-Key", apiKey);
+                }
+
                 request.Content = JsonContent.Create(new
                 {
-                    messaging_product = "whatsapp",
-                    recipient_type = "individual",
-                    to = destinatarioWaId,
-                    type = "text",
-                    text = new
-                    {
-                        preview_url = false,
-                        body = texto
-                    }
+                    session,
+                    chatId,
+                    text = texto
                 });
 
                 var response = await client.SendAsync(request, cancellationToken);
@@ -67,16 +63,27 @@ namespace Teledesk.API.Services
                 {
                     var erro = await response.Content.ReadAsStringAsync(cancellationToken);
                     _logger.LogError(
-                        "Falha ao enviar mensagem na WhatsApp Cloud API ({StatusCode}): {Erro}",
-                        response.StatusCode, erro);
+                        "Falha ao enviar mensagem pelo WAHA ({StatusCode}) na sessão '{Session}': {Erro}",
+                        response.StatusCode, session, erro);
                     return false;
                 }
 
+                _logger.LogInformation(
+                    "📲 [WAHA Enviado | Sessão: {Session} -> {ChatId}]: {Texto}",
+                    session, chatId, texto);
+                return true;
+            }
+            catch (HttpRequestException ex)
+            {
+                // Permite usar o Simulador Desktop mesmo quando o container WAHA não estiver em execução
+                _logger.LogWarning(
+                    "WAHA inacessível em {Url} ({Erro}). [Simulado | Sessão: {Session} -> {ChatId}]: {Texto}",
+                    wahaBaseUrl, ex.Message, session, chatId, texto);
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro de comunicação com a WhatsApp Cloud API.");
+                _logger.LogError(ex, "Erro inesperado ao enviar mensagem para o WAHA.");
                 return false;
             }
         }

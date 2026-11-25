@@ -151,10 +151,10 @@ public class GestaoForm : Form
         var lblNum = new Label { Text = "Número de Exibição (ex: +55 11 99999-9999):", Location = new Point(460, 76), AutoSize = true };
         txtNumeroExibicao = new TextBox { Location = new Point(460, 98), Size = new Size(390, 23) };
 
-        var lblPhoneId = new Label { Text = "PhoneNumberId (Meta Cloud API):", Location = new Point(460, 132), AutoSize = true };
+        var lblPhoneId = new Label { Text = "Sessão WAHA (ex: default, suporte):", Location = new Point(460, 132), AutoSize = true };
         txtPhoneNumberId = new TextBox { Location = new Point(460, 154), Size = new Size(390, 23) };
 
-        var lblToken = new Label { Text = "Access Token próprio (opcional):", Location = new Point(460, 188), AutoSize = true };
+        var lblToken = new Label { Text = "X-Api-Key do WAHA (opcional):", Location = new Point(460, 188), AutoSize = true };
         txtAccessToken = new TextBox { Location = new Point(460, 210), Size = new Size(390, 23), UseSystemPasswordChar = true };
 
         var lblSetores = new Label { Text = "Setores atendidos (1 = Direto | 2+ = URA):", Location = new Point(460, 244), AutoSize = true };
@@ -440,7 +440,7 @@ public class GestaoForm : Form
         try
         {
             var numero = cmbSimuladorNumero.SelectedItem as NumeroWhatsAppViewModel;
-            var phoneNumberId = numero?.PhoneNumberId ?? "100000000000000";
+            var phoneNumberId = numero?.PhoneNumberId ?? "default";
 
             using var client = CriarHttpClientAutenticado();
             var response = await client.PostAsJsonAsync("/api/webhook/whatsapp/simular", new

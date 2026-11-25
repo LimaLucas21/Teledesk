@@ -1,4 +1,4 @@
-﻿namespace Teledesk.Desktop.Models
+namespace Teledesk.Desktop.Models
 {
     public class AtendenteModel
     {

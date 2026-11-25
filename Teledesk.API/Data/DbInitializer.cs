@@ -8,7 +8,7 @@ namespace Teledesk.API.Data
     public static class DbInitializer
     {
         /// <summary>
-        /// Garante a criação dos setores iniciais, número WhatsApp padrão e usuário administrador.
+        /// Garante a criação dos setores iniciais, sessão/número padrão do WAHA e usuário administrador.
         /// </summary>
         public static async Task SeedAsync(TeledeskDbContext context)
         {
@@ -27,13 +27,23 @@ namespace Teledesk.API.Data
 
             var todosSetores = await context.Setores.OrderBy(s => s.OrdemUra).ToListAsync();
 
+            var numeroLegado = await context.NumerosWhatsApp
+                .FirstOrDefaultAsync(n => n.PhoneNumberId == "100000000000000");
+
+            if (numeroLegado != null && !await context.NumerosWhatsApp.AnyAsync(n => n.PhoneNumberId == "default"))
+            {
+                numeroLegado.PhoneNumberId = "default";
+                numeroLegado.NomeIdentificacao = "Atendimento Principal (Sessão default WAHA)";
+                await context.SaveChangesAsync();
+            }
+
             if (!await context.NumerosWhatsApp.AnyAsync())
             {
                 var numeroPrincipal = new NumeroWhatsApp
                 {
-                    NomeIdentificacao = "Atendimento Principal (URA)",
+                    NomeIdentificacao = "Atendimento Principal (Sessão default WAHA)",
                     NumeroExibicao = "+55 11 90000-0000",
-                    PhoneNumberId = "100000000000000",
+                    PhoneNumberId = "default",
                     Ativo = true,
                     Setores = todosSetores
                 };
@@ -62,4 +72,3 @@ namespace Teledesk.API.Data
         }
     }
 }
-

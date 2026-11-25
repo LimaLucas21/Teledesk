@@ -1,4 +1,4 @@
-﻿using Teledesk.API.Models.Enums;
+using Teledesk.API.Models.Enums;
 
 namespace Teledesk.API.DTOs
 {

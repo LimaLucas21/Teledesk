@@ -92,12 +92,76 @@ namespace Teledesk.API.DTOs
         public string? Body { get; set; }
     }
 
+    // --- DTOs do WAHA (https://waha.devlike.pro/swagger/) ---
+
+    public class WahaWebhookPayload
+    {
+        [JsonPropertyName("event")]
+        public string? Event { get; set; }
+
+        [JsonPropertyName("session")]
+        public string? Session { get; set; }
+
+        [JsonPropertyName("me")]
+        public WahaMeDto? Me { get; set; }
+
+        [JsonPropertyName("payload")]
+        public WahaMessagePayloadDto? Payload { get; set; }
+    }
+
+    public class WahaMeDto
+    {
+        [JsonPropertyName("id")]
+        public string? Id { get; set; }
+
+        [JsonPropertyName("pushName")]
+        public string? PushName { get; set; }
+    }
+
+    public class WahaMessagePayloadDto
+    {
+        [JsonPropertyName("id")]
+        public string? Id { get; set; }
+
+        [JsonPropertyName("timestamp")]
+        public long? Timestamp { get; set; }
+
+        [JsonPropertyName("from")]
+        public string? From { get; set; }
+
+        [JsonPropertyName("to")]
+        public string? To { get; set; }
+
+        [JsonPropertyName("chatId")]
+        public string? ChatId { get; set; }
+
+        [JsonPropertyName("body")]
+        public string? Body { get; set; }
+
+        [JsonPropertyName("fromMe")]
+        public bool FromMe { get; set; }
+
+        [JsonPropertyName("notifyName")]
+        public string? NotifyName { get; set; }
+
+        [JsonPropertyName("_data")]
+        public WahaRawDataDto? Data { get; set; }
+    }
+
+    public class WahaRawDataDto
+    {
+        [JsonPropertyName("notifyName")]
+        public string? NotifyName { get; set; }
+
+        [JsonPropertyName("pushname")]
+        public string? PushName { get; set; }
+    }
+
     public class SimularMensagemWhatsAppDto
     {
-        public string PhoneNumberId { get; set; } = "100000000000000";
+        public string PhoneNumberId { get; set; } = "default";
         public string WaId { get; set; } = "5511999998888";
         public string NomeCliente { get; set; } = "Cliente Teste";
         public string Texto { get; set; } = "Olá";
     }
 }
-

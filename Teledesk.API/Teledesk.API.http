@@ -9,16 +9,29 @@ Content-Type: application/json
   "senha": "admin123"
 }
 
-### Simular Mensagem Recebida no WhatsApp (Número Principal com URA)
+### Simular Webhook Oficial do WAHA (https://waha.devlike.pro/swagger/)
+POST {{Teledesk.API_HostAddress}}/api/webhook/whatsapp
+Content-Type: application/json
+
+{
+  "event": "message",
+  "session": "default",
+  "payload": {
+    "id": "true_5511999998888@c.us_3EB0DEMO01",
+    "from": "5511999998888@c.us",
+    "body": "Olá",
+    "fromMe": false,
+    "notifyName": "Maria Souza"
+  }
+}
+
+### Simular Mensagem via Simulador Desktop
 POST {{Teledesk.API_HostAddress}}/api/webhook/whatsapp/simular
 Content-Type: application/json
 
 {
-  "phoneNumberId": "100000000000000",
+  "phoneNumberId": "default",
   "waId": "5511999998888",
   "nomeCliente": "Maria Souza",
-  "texto": "Olá, preciso de atendimento"
+  "texto": "1"
 }
-
-### Verificação GET do Webhook da Meta
-GET {{Teledesk.API_HostAddress}}/api/webhook/whatsapp?hub.mode=subscribe&hub.verify_token=teledesk_verify_token&hub.challenge=123456

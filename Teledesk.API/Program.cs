@@ -14,10 +14,24 @@ namespace Teledesk.API
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // Configuração do Entity Framework Core com MySQL (Pomelo)
-            var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+            // Detecta automaticamente SQL Server (LocalDB) ou MySQL conforme a ConnectionString
+            var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+                ?? throw new InvalidOperationException("ConnectionString 'DefaultConnection' não configurada.");
+
+            bool usarSqlServer = connectionString.Contains("(localdb)", StringComparison.OrdinalIgnoreCase)
+                || connectionString.Contains("Trusted_Connection", StringComparison.OrdinalIgnoreCase);
+
             builder.Services.AddDbContext<TeledeskDbContext>(options =>
-                options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 36))));
+            {
+                if (usarSqlServer)
+                {
+                    options.UseSqlServer(connectionString);
+                }
+                else
+                {
+                    options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 36)));
+                }
+            });
 
             builder.Services.AddControllers();
             builder.Services.AddOpenApi();
@@ -51,19 +65,27 @@ namespace Teledesk.API
 
             var app = builder.Build();
 
-            // Aplica migrations / seed inicial se o MySQL estiver acessível
+            // Cria/atualiza banco e executa seed inicial
             using (var scope = app.Services.CreateScope())
             {
                 var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
                 try
                 {
                     var db = scope.ServiceProvider.GetRequiredService<TeledeskDbContext>();
-                    await db.Database.MigrateAsync();
+                    if (usarSqlServer)
+                    {
+                        await db.Database.EnsureCreatedAsync();
+                    }
+                    else
+                    {
+                        await db.Database.MigrateAsync();
+                    }
+
                     await DbInitializer.SeedAsync(db);
                 }
                 catch (Exception ex)
                 {
-                    logger.LogWarning(ex, "Não foi possível aplicar migrations/seed automaticamente na inicialização. Verifique se o MySQL está rodando.");
+                    logger.LogWarning(ex, "Não foi possível inicializar o banco automaticamente. Verifique a ConnectionString.");
                 }
             }
 

@@ -42,7 +42,7 @@ namespace Teledesk.API.Services
                     if (value?.Messages == null || value.Messages.Count == 0)
                         continue;
 
-                    var phoneNumberId = value.Metadata?.PhoneNumberId ?? "100000000000000";
+                    var phoneNumberId = value.Metadata?.PhoneNumberId ?? "default";
                     var displayPhone = value.Metadata?.DisplayPhoneNumber;
 
                     foreach (var msg in value.Messages)
@@ -74,6 +74,51 @@ namespace Teledesk.API.Services
             }
         }
 
+        public async Task ProcessWahaWebhookAsync(WahaWebhookPayload payload)
+        {
+            if (payload?.Payload == null)
+                return;
+
+            // Processa apenas mensagens recebidas de clientes (ignora eventos de status ou mensagens enviadas pelo próprio bot)
+            if (!string.Equals(payload.Event, "message", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(payload.Event, "message.any", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (payload.Payload.FromMe || string.IsNullOrWhiteSpace(payload.Payload.Body))
+                return;
+
+            var rawFrom = payload.Payload.From ?? payload.Payload.ChatId ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(rawFrom))
+                return;
+
+            // Ignora grupos, transmissões e canais
+            if (rawFrom.EndsWith("@g.us", StringComparison.OrdinalIgnoreCase) ||
+                rawFrom.EndsWith("@broadcast", StringComparison.OrdinalIgnoreCase) ||
+                rawFrom.EndsWith("@newsletter", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var session = string.IsNullOrWhiteSpace(payload.Session) ? "default" : payload.Session.Trim();
+            var waId = NormalizarWaId(rawFrom);
+            var nomeCliente = payload.Payload.Data?.NotifyName
+                ?? payload.Payload.Data?.PushName
+                ?? payload.Payload.NotifyName
+                ?? $"Cliente {waId}";
+
+            var displayPhone = NormalizarWaId(payload.Me?.Id);
+
+            await ProcessIncomingWhatsAppMessageAsync(
+                session,
+                waId,
+                nomeCliente,
+                payload.Payload.Body,
+                payload.Payload.Id,
+                displayPhone);
+        }
+
         public async Task<ResultadoProcessamentoWhatsApp> ProcessIncomingWhatsAppMessageAsync(
             string phoneNumberId,
             string waId,
@@ -92,7 +137,10 @@ namespace Teledesk.API.Services
             }
 
             texto = texto.Trim();
-            phoneNumberId = string.IsNullOrWhiteSpace(phoneNumberId) ? "100000000000000" : phoneNumberId.Trim();
+            waId = NormalizarWaId(waId);
+            phoneNumberId = string.IsNullOrWhiteSpace(phoneNumberId) || phoneNumberId == "100000000000000"
+                ? "default"
+                : phoneNumberId.Trim();
 
             // 1. Idempotência: ignora caso a Meta reenvie a mesma mensagem (wamid)
             if (!string.IsNullOrWhiteSpace(whatsAppMessageId))
@@ -401,6 +449,19 @@ namespace Teledesk.API.Services
             {
                 await _hubContext.Clients.All.SendAsync(evento, payload);
             }
+        }
+
+        private static string NormalizarWaId(string? id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                return string.Empty;
+
+            var limpo = id.Trim();
+            var idxArroba = limpo.IndexOf('@');
+            if (idxArroba > 0)
+                limpo = limpo[..idxArroba];
+
+            return limpo;
         }
     }
 }

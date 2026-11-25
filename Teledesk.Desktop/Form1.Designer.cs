@@ -1,4 +1,4 @@
-﻿namespace Teledesk.Desktop;
+namespace Teledesk.Desktop;
 
 partial class Form1
 {

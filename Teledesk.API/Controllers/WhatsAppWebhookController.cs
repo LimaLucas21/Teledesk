@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
@@ -27,7 +26,7 @@ namespace Teledesk.API.Controllers
         }
 
         /// <summary>
-        /// Endpoint oficial GET exigido pela Meta para verificar o Webhook da WhatsApp Cloud API.
+        /// Endpoint GET de verificação caso seja utilizado também com a Meta Cloud API.
         /// </summary>
         [AllowAnonymous]
         [HttpGet]
@@ -40,48 +39,56 @@ namespace Teledesk.API.Controllers
 
             if (mode == "subscribe" && verifyToken == expectedToken && !string.IsNullOrEmpty(challenge))
             {
-                _logger.LogInformation("Webhook da WhatsApp Cloud API verificado com sucesso!");
+                _logger.LogInformation("Webhook verificado com sucesso!");
                 return Content(challenge, "text/plain");
             }
 
-            _logger.LogWarning("Falha na verificação do Webhook do WhatsApp (VerifyToken inválido).");
             return Forbid();
         }
 
         /// <summary>
-        /// Endpoint oficial POST que recebe os eventos de mensagens da Meta (WhatsApp Cloud API).
+        /// Recebe eventos do WAHA (https://waha.devlike.pro/swagger/) ou da Meta Cloud API.
         /// </summary>
         [AllowAnonymous]
         [HttpPost]
+        [HttpPost("waha")]
         public async Task<IActionResult> ReceberEvento()
         {
             using var reader = new StreamReader(Request.Body, Encoding.UTF8);
             var rawBody = await reader.ReadToEndAsync();
 
-            var appSecret = _configuration["WhatsAppSettings:AppSecret"];
-            if (!string.IsNullOrWhiteSpace(appSecret))
-            {
-                var signatureHeader = Request.Headers["X-Hub-Signature-256"].ToString();
-                if (!ValidarAssinaturaMeta(rawBody, signatureHeader, appSecret))
-                {
-                    _logger.LogWarning("Assinatura X-Hub-Signature-256 inválida no webhook do WhatsApp.");
-                    return Unauthorized();
-                }
-            }
+            if (string.IsNullOrWhiteSpace(rawBody))
+                return Ok();
 
             try
             {
-                var payload = JsonSerializer.Deserialize<WhatsAppWebhookPayload>(rawBody);
-                if (payload != null)
+                using var doc = JsonDocument.Parse(rawBody);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("event", out _))
                 {
-                    await _conversationService.ProcessWebhookPayloadAsync(payload);
+                    var wahaPayload = JsonSerializer.Deserialize<WahaWebhookPayload>(rawBody);
+                    if (wahaPayload != null)
+                    {
+                        await _conversationService.ProcessWahaWebhookAsync(wahaPayload);
+                    }
+                    return Ok();
                 }
+
+                if (root.TryGetProperty("entry", out _))
+                {
+                    var metaPayload = JsonSerializer.Deserialize<WhatsAppWebhookPayload>(rawBody);
+                    if (metaPayload != null)
+                    {
+                        await _conversationService.ProcessWebhookPayloadAsync(metaPayload);
+                    }
+                }
+
                 return Ok();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro ao processar evento do webhook do WhatsApp.");
-                // Retorna 200 OK para evitar loop de retentativas da Meta
+                _logger.LogError(ex, "Erro ao processar evento do webhook do WhatsApp/WAHA.");
                 return Ok();
             }
         }
@@ -101,24 +108,6 @@ namespace Teledesk.API.Controllers
                 $"sim_{Guid.NewGuid():N}");
 
             return Ok(resultado);
-        }
-
-        private static bool ValidarAssinaturaMeta(string rawBody, string signatureHeader, string appSecret)
-        {
-            if (string.IsNullOrWhiteSpace(signatureHeader) ||
-                !signatureHeader.StartsWith("sha256=", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            var hexRecebido = signatureHeader["sha256=".Length..];
-            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(appSecret));
-            var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(rawBody));
-            var hexEsperado = Convert.ToHexString(hash).ToLowerInvariant();
-
-            return CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(hexEsperado),
-                Encoding.UTF8.GetBytes(hexRecebido.ToLowerInvariant()));
         }
     }
 }
