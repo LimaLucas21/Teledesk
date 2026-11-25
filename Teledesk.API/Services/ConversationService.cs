@@ -79,7 +79,6 @@ namespace Teledesk.API.Services
             if (payload?.Payload == null)
                 return;
 
-            // Processa apenas mensagens recebidas de clientes (ignora eventos de status ou mensagens enviadas pelo próprio bot)
             if (!string.Equals(payload.Event, "message", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(payload.Event, "message.any", StringComparison.OrdinalIgnoreCase))
             {
@@ -93,7 +92,7 @@ namespace Teledesk.API.Services
             if (string.IsNullOrWhiteSpace(rawFrom))
                 return;
 
-            // Ignora grupos, transmissões e canais
+            // Ignora grupos, listas de transmissão e canais
             if (rawFrom.EndsWith("@g.us", StringComparison.OrdinalIgnoreCase) ||
                 rawFrom.EndsWith("@broadcast", StringComparison.OrdinalIgnoreCase) ||
                 rawFrom.EndsWith("@newsletter", StringComparison.OrdinalIgnoreCase))
@@ -102,13 +101,17 @@ namespace Teledesk.API.Services
             }
 
             var session = string.IsNullOrWhiteSpace(payload.Session) ? "default" : payload.Session.Trim();
-            var waId = NormalizarWaId(rawFrom);
-            var nomeCliente = payload.Payload.Data?.NotifyName
-                ?? payload.Payload.Data?.PushName
-                ?? payload.Payload.NotifyName
-                ?? $"Cliente {waId}";
+            var waId = await ResolverIdentificadorRemetenteWahaAsync(session, rawFrom, payload.Payload.Data?.Key);
 
-            var displayPhone = NormalizarWaId(payload.Me?.Id);
+            var nomeExtraido = payload.Payload.Data?.PushName
+                ?? payload.Payload.Data?.NotifyName
+                ?? payload.Payload.NotifyName;
+
+            var nomeCliente = !string.IsNullOrWhiteSpace(nomeExtraido)
+                ? nomeExtraido.Trim()
+                : $"Cliente {ExibirIdentificadorCurto(waId)}";
+
+            var displayPhone = NormalizarIdentificadorWhatsApp(payload.Me?.Id);
 
             await ProcessIncomingWhatsAppMessageAsync(
                 session,
@@ -137,12 +140,12 @@ namespace Teledesk.API.Services
             }
 
             texto = texto.Trim();
-            waId = NormalizarWaId(waId);
+            waId = NormalizarIdentificadorWhatsApp(waId);
             phoneNumberId = string.IsNullOrWhiteSpace(phoneNumberId) || phoneNumberId == "100000000000000"
                 ? "default"
                 : phoneNumberId.Trim();
 
-            // 1. Idempotência: ignora caso a Meta reenvie a mesma mensagem (wamid)
+            // 1. Idempotência
             if (!string.IsNullOrWhiteSpace(whatsAppMessageId))
             {
                 var jaProcessada = await _context.Mensagens
@@ -150,7 +153,7 @@ namespace Teledesk.API.Services
 
                 if (jaProcessada)
                 {
-                    _logger.LogInformation("Mensagem duplicada ignorada (wamid: {MessageId})", whatsAppMessageId);
+                    _logger.LogInformation("Mensagem duplicada ignorada (id: {MessageId})", whatsAppMessageId);
                     return new ResultadoProcessamentoWhatsApp
                     {
                         Sucesso = true,
@@ -159,7 +162,7 @@ namespace Teledesk.API.Services
                 }
             }
 
-            // 2. Localizar o Número WhatsApp que recebeu a mensagem (e seus setores vinculados)
+            // 2. Localizar o Número/Sessão WhatsApp
             var numeroWhatsApp = await _context.NumerosWhatsApp
                 .Include(n => n.Setores)
                 .FirstOrDefaultAsync(n => n.PhoneNumberId == phoneNumberId && n.Ativo);
@@ -194,29 +197,46 @@ namespace Teledesk.API.Services
                     .ToListAsync();
             }
 
-            // 3. Identificar ou cadastrar o Contato pelo WhatsAppId
+            // 3. Identificar ou cadastrar o Contato (também reconcilia registros antigos sem @lid)
+            var waIdSemSufixo = ExibirIdentificadorCurto(waId);
             var contato = await _context.Contatos
-                .FirstOrDefaultAsync(c => c.WhatsAppId == waId);
+                .FirstOrDefaultAsync(c => c.WhatsAppId == waId || c.WhatsAppId == waIdSemSufixo);
 
             if (contato == null)
             {
                 contato = new Contato
                 {
                     WhatsAppId = waId,
-                    Nome = string.IsNullOrWhiteSpace(nomeCliente) ? $"Cliente {waId}" : nomeCliente,
-                    Username = waId,
+                    Nome = string.IsNullOrWhiteSpace(nomeCliente) ? $"Cliente {waIdSemSufixo}" : nomeCliente,
+                    Username = waIdSemSufixo,
                     DataCriacao = DateTime.UtcNow
                 };
                 _context.Contatos.Add(contato);
                 await _context.SaveChangesAsync();
             }
-            else if (!string.IsNullOrWhiteSpace(nomeCliente) && contato.Nome.StartsWith("Cliente "))
+            else
             {
-                contato.Nome = nomeCliente;
-                await _context.SaveChangesAsync();
+                bool alterouContato = false;
+                // Se estava salvo sem @lid por versão anterior e agora veio @lid (ou número resolvido), corrige!
+                if (contato.WhatsAppId != waId)
+                {
+                    contato.WhatsAppId = waId;
+                    alterouContato = true;
+                }
+                if (!string.IsNullOrWhiteSpace(nomeCliente) &&
+                    !nomeCliente.StartsWith("Cliente ", StringComparison.OrdinalIgnoreCase) &&
+                    contato.Nome != nomeCliente)
+                {
+                    contato.Nome = nomeCliente;
+                    alterouContato = true;
+                }
+                if (alterouContato)
+                {
+                    await _context.SaveChangesAsync();
+                }
             }
 
-            // 4. Localizar ou iniciar Atendimento ativo para este contato
+            // 4. Localizar ou iniciar Atendimento ativo
             var atendimento = await _context.Atendimentos
                 .Include(a => a.Setor)
                 .Include(a => a.NumeroWhatsApp)
@@ -226,7 +246,6 @@ namespace Teledesk.API.Services
             if (atendimento == null)
             {
                 novoAtendimento = true;
-                // Se o número estiver vinculado a apenas 1 setor, pula a URA e cai direto na fila daquele setor
                 if (setoresAtivos.Count == 1)
                 {
                     var setorUnico = setoresAtivos[0];
@@ -266,13 +285,22 @@ namespace Teledesk.API.Services
             _context.Mensagens.Add(mensagem);
             await _context.SaveChangesAsync();
 
+            var mensagemClienteDto = new MensagemDto
+            {
+                Id = mensagem.Id,
+                AtendimentoId = mensagem.AtendimentoId,
+                Texto = mensagem.Texto,
+                Origem = mensagem.Origem,
+                DataEnvio = mensagem.DataEnvio
+            };
+
             // 6. Roteamento conforme estado do atendimento
             if (novoAtendimento && atendimento.Status == StatusAtendimento.AguardandoAtendente && atendimento.SetorId.HasValue)
             {
                 var setorUnico = setoresAtivos[0];
                 var resposta = $"Olá, {contato.Nome}! Você entrou em contato com o setor *{setorUnico.Nome}*. Aguarde um instante, um atendente já irá te responder.";
                 await EnviarMensagemSistemaAsync(atendimento, numeroWhatsApp, contato.WhatsAppId, resposta);
-                await NotificarNovaConversaNoSetorAsync(atendimento, contato, setorUnico, numeroWhatsApp, texto);
+                await NotificarConversaNoPainelAsync(atendimento, contato, setorUnico, numeroWhatsApp, texto);
 
                 return new ResultadoProcessamentoWhatsApp
                 {
@@ -293,19 +321,11 @@ namespace Teledesk.API.Services
                     setoresAtivos,
                     contato,
                     texto,
-                    novoAtendimento);
+                    novoAtendimento,
+                    mensagemClienteDto);
             }
 
-            var mensagemDto = new MensagemDto
-            {
-                Id = mensagem.Id,
-                AtendimentoId = mensagem.AtendimentoId,
-                Texto = mensagem.Texto,
-                Origem = mensagem.Origem,
-                DataEnvio = mensagem.DataEnvio
-            };
-
-            await EnviarParaGrupoSetorAsync(atendimento.SetorId, "NovaMensagemRecebida", mensagemDto);
+            await EnviarParaGrupoSetorAsync(atendimento.SetorId, "NovaMensagemRecebida", mensagemClienteDto);
 
             return new ResultadoProcessamentoWhatsApp
             {
@@ -323,9 +343,10 @@ namespace Teledesk.API.Services
             List<Setor> setoresAtivos,
             Contato contato,
             string texto,
-            bool novoAtendimento)
+            bool novoAtendimento,
+            MensagemDto mensagemClienteDto)
         {
-            if (!novoAtendimento && setoresAtivos.Count > 0)
+            if (setoresAtivos.Count > 0)
             {
                 Setor? setorEscolhido = null;
 
@@ -333,11 +354,10 @@ namespace Teledesk.API.Services
                 {
                     setorEscolhido = setoresAtivos[opcao - 1];
                 }
-                else
+                else if (!novoAtendimento)
                 {
                     setorEscolhido = setoresAtivos.FirstOrDefault(s =>
-                        string.Equals(s.Nome, texto, StringComparison.OrdinalIgnoreCase) ||
-                        s.OrdemUra.ToString() == texto);
+                        string.Equals(s.Nome, texto, StringComparison.OrdinalIgnoreCase));
                 }
 
                 if (setorEscolhido != null)
@@ -348,7 +368,10 @@ namespace Teledesk.API.Services
 
                     var respostaTransferencia = $"✅ Você escolheu o setor *{setorEscolhido.Nome}*. Aguarde um instante que um de nossos atendentes desse setor irá te atender!";
                     await EnviarMensagemSistemaAsync(atendimento, numeroWhatsApp, contato.WhatsAppId, respostaTransferencia);
-                    await NotificarNovaConversaNoSetorAsync(atendimento, contato, setorEscolhido, numeroWhatsApp, texto);
+
+                    // Atualiza a fila (para todos verem que saiu da URA e para o setor específico receber)
+                    await _hubContext.Clients.All.SendAsync("NovaConversaNaFila", CriarAtendimentoDto(atendimento, contato, setorEscolhido, numeroWhatsApp, texto));
+                    await EnviarParaGrupoSetorAsync(setorEscolhido.Id, "NovaMensagemRecebida", mensagemClienteDto);
 
                     return new ResultadoProcessamentoWhatsApp
                     {
@@ -378,7 +401,12 @@ namespace Teledesk.API.Services
             sb.Append("Digite apenas o número da opção desejada:");
 
             var menu = sb.ToString();
-            await EnviarMensagemSistemaAsync(atendimento, numeroWhatsApp, contato.WhatsAppId, menu);
+            var mensagemSistemaDto = await EnviarMensagemSistemaAsync(atendimento, numeroWhatsApp, contato.WhatsAppId, menu);
+
+            // Notifica os painéis em tempo real mesmo enquanto está na URA, para que a conversa já apareça na tela!
+            await _hubContext.Clients.All.SendAsync("NovaConversaNaFila", CriarAtendimentoDto(atendimento, contato, null, numeroWhatsApp, texto));
+            await _hubContext.Clients.All.SendAsync("NovaMensagemRecebida", mensagemClienteDto);
+            await _hubContext.Clients.All.SendAsync("NovaMensagemRecebida", mensagemSistemaDto);
 
             return new ResultadoProcessamentoWhatsApp
             {
@@ -389,7 +417,7 @@ namespace Teledesk.API.Services
             };
         }
 
-        private async Task EnviarMensagemSistemaAsync(
+        private async Task<MensagemDto> EnviarMensagemSistemaAsync(
             Atendimento atendimento,
             NumeroWhatsApp numeroWhatsApp,
             string destinatarioWaId,
@@ -411,32 +439,50 @@ namespace Teledesk.API.Services
 
             _context.Mensagens.Add(mensagemSistema);
             await _context.SaveChangesAsync();
+
+            return new MensagemDto
+            {
+                Id = mensagemSistema.Id,
+                AtendimentoId = mensagemSistema.AtendimentoId,
+                Texto = mensagemSistema.Texto,
+                Origem = mensagemSistema.Origem,
+                DataEnvio = mensagemSistema.DataEnvio
+            };
         }
 
-        private async Task NotificarNovaConversaNoSetorAsync(
+        private async Task NotificarConversaNoPainelAsync(
             Atendimento atendimento,
             Contato contato,
-            Setor setor,
+            Setor? setor,
             NumeroWhatsApp numeroWhatsApp,
             string ultimaMensagem)
         {
-            var atendimentoDto = new AtendimentoDto
+            var atendimentoDto = CriarAtendimentoDto(atendimento, contato, setor, numeroWhatsApp, ultimaMensagem);
+            await EnviarParaGrupoSetorAsync(setor?.Id, "NovaConversaNaFila", atendimentoDto);
+        }
+
+        private static AtendimentoDto CriarAtendimentoDto(
+            Atendimento atendimento,
+            Contato contato,
+            Setor? setor,
+            NumeroWhatsApp numeroWhatsApp,
+            string ultimaMensagem)
+        {
+            return new AtendimentoDto
             {
                 Id = atendimento.Id,
                 ContatoId = contato.Id,
                 NomeCliente = contato.Nome,
                 UsernameCliente = contato.Username,
                 WhatsAppId = contato.WhatsAppId,
-                SetorId = setor.Id,
-                SetorNome = setor.Nome,
+                SetorId = setor?.Id ?? atendimento.SetorId,
+                SetorNome = setor?.Nome ?? (atendimento.Status == StatusAtendimento.EmUra ? "Na URA" : "Sem Setor"),
                 NumeroWhatsAppId = numeroWhatsApp.Id,
                 NumeroExibicao = numeroWhatsApp.NumeroExibicao,
                 Status = atendimento.Status,
                 DataInicio = atendimento.DataInicio,
                 UltimaMensagem = ultimaMensagem
             };
-
-            await EnviarParaGrupoSetorAsync(setor.Id, "NovaConversaNaFila", atendimentoDto);
         }
 
         private async Task EnviarParaGrupoSetorAsync(int? setorId, string evento, object payload)
@@ -451,17 +497,65 @@ namespace Teledesk.API.Services
             }
         }
 
-        private static string NormalizarWaId(string? id)
+        private async Task<string> ResolverIdentificadorRemetenteWahaAsync(
+            string session,
+            string rawFrom,
+            WahaMessageKeyDto? key)
+        {
+            // 1. Verifica se o Baileys/NOWEB já enviou o número real alternativo no payload (_data.key)
+            var candidatos = new[] { key?.RemoteJidAlt, key?.SenderPn, key?.ParticipantAlt };
+            foreach (var candidato in candidatos)
+            {
+                if (!string.IsNullOrWhiteSpace(candidato) &&
+                    !candidato.EndsWith("@lid", StringComparison.OrdinalIgnoreCase))
+                {
+                    return NormalizarIdentificadorWhatsApp(candidato);
+                }
+            }
+
+            // 2. Se veio como @lid, tenta resolver na API do WAHA; se não resolver, mantém o sufixo @lid!
+            if (rawFrom.EndsWith("@lid", StringComparison.OrdinalIgnoreCase))
+            {
+                var telefoneResolvido = await _whatsAppService.ResolverLidParaTelefoneAsync(session, rawFrom);
+                if (!string.IsNullOrWhiteSpace(telefoneResolvido))
+                {
+                    return NormalizarIdentificadorWhatsApp(telefoneResolvido);
+                }
+
+                return rawFrom.Trim();
+            }
+
+            return NormalizarIdentificadorWhatsApp(rawFrom);
+        }
+
+        /// <summary>
+        /// Remove @c.us / @s.whatsapp.net para números comuns, mas preserva @lid para envio correto no WAHA.
+        /// </summary>
+        private static string NormalizarIdentificadorWhatsApp(string? id)
         {
             if (string.IsNullOrWhiteSpace(id))
                 return string.Empty;
 
             var limpo = id.Trim();
+            if (limpo.EndsWith("@lid", StringComparison.OrdinalIgnoreCase))
+            {
+                return limpo;
+            }
+
             var idxArroba = limpo.IndexOf('@');
             if (idxArroba > 0)
                 limpo = limpo[..idxArroba];
 
-            return limpo;
+            return limpo.TrimStart('+');
+        }
+
+        private static string ExibirIdentificadorCurto(string? id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                return string.Empty;
+
+            var idx = id.IndexOf('@');
+            return idx > 0 ? id[..idx] : id;
         }
     }
 }

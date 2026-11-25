@@ -295,7 +295,7 @@ public partial class Form1 : Form
                                   _atendimentoSelecionado!.Status == 2 &&
                                   _atendimentoSelecionado.AtendenteId == _atendenteLogado?.Id;
 
-        btnAssumir.Enabled = temSelecionado && _atendimentoSelecionado!.Status == 1;
+        btnAssumir.Enabled = temSelecionado && (_atendimentoSelecionado!.Status == 1 || _atendimentoSelecionado.Status == 0);
         btnFinalizar.Enabled = emAtendimentoComigo;
         txtMensagem.Enabled = emAtendimentoComigo;
         btnEnviar.Enabled = emAtendimentoComigo;

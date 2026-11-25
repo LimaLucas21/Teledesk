@@ -19,8 +19,13 @@ namespace Teledesk.Desktop.Models
 
         public override string ToString()
         {
-            var statusTexto = Status == 1 ? "⏳ [Fila]" : "💬 [Em Atendimento]";
-            var setor = !string.IsNullOrWhiteSpace(SetorNome) ? $" [{SetorNome}]" : "";
+            var statusTexto = Status switch
+            {
+                0 => "🤖 [Em URA]",
+                1 => "⏳ [Fila]",
+                _ => "💬 [Em Atendimento]"
+            };
+            var setor = !string.IsNullOrWhiteSpace(SetorNome) && Status != 0 ? $" [{SetorNome}]" : "";
             return $"{statusTexto}{setor} #{Id} - {NomeCliente} ({WhatsAppId})";
         }
     }

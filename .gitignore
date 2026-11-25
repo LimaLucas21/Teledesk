@@ -20,6 +20,7 @@ artifacts/
 .env
 *.env
 appsettings.Development.json
+.waha-sessions/
 COMANDOS_DOCKER_MYSQL.txt
 
 # NuGet Packages

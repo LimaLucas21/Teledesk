@@ -11,6 +11,11 @@ namespace Teledesk.API.Controllers
     [Route("api/webhook/whatsapp")]
     public class WhatsAppWebhookController : ControllerBase
     {
+        private static readonly JsonSerializerOptions JsonOptions = new()
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
         private readonly IConversationService _conversationService;
         private readonly IConfiguration _configuration;
         private readonly ILogger<WhatsAppWebhookController> _logger;
@@ -25,9 +30,6 @@ namespace Teledesk.API.Controllers
             _logger = logger;
         }
 
-        /// <summary>
-        /// Endpoint GET de verificação caso seja utilizado também com a Meta Cloud API.
-        /// </summary>
         [AllowAnonymous]
         [HttpGet]
         public IActionResult VerificarWebhook(
@@ -46,9 +48,6 @@ namespace Teledesk.API.Controllers
             return Forbid();
         }
 
-        /// <summary>
-        /// Recebe eventos do WAHA (https://waha.devlike.pro/swagger/) ou da Meta Cloud API.
-        /// </summary>
         [AllowAnonymous]
         [HttpPost]
         [HttpPost("waha")]
@@ -67,9 +66,17 @@ namespace Teledesk.API.Controllers
 
                 if (root.TryGetProperty("event", out _))
                 {
-                    var wahaPayload = JsonSerializer.Deserialize<WahaWebhookPayload>(rawBody);
+                    var wahaPayload = JsonSerializer.Deserialize<WahaWebhookPayload>(rawBody, JsonOptions);
                     if (wahaPayload != null)
                     {
+                        _logger.LogInformation(
+                            "📥 Webhook WAHA recebido: event={Event}, session={Session}, from={From}, fromMe={FromMe}, alt={Alt}",
+                            wahaPayload.Event,
+                            wahaPayload.Session,
+                            wahaPayload.Payload?.From,
+                            wahaPayload.Payload?.FromMe,
+                            wahaPayload.Payload?.Data?.Key?.RemoteJidAlt ?? wahaPayload.Payload?.Data?.Key?.SenderPn);
+
                         await _conversationService.ProcessWahaWebhookAsync(wahaPayload);
                     }
                     return Ok();
@@ -77,7 +84,7 @@ namespace Teledesk.API.Controllers
 
                 if (root.TryGetProperty("entry", out _))
                 {
-                    var metaPayload = JsonSerializer.Deserialize<WhatsAppWebhookPayload>(rawBody);
+                    var metaPayload = JsonSerializer.Deserialize<WhatsAppWebhookPayload>(rawBody, JsonOptions);
                     if (metaPayload != null)
                     {
                         await _conversationService.ProcessWebhookPayloadAsync(metaPayload);
@@ -93,9 +100,6 @@ namespace Teledesk.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Endpoint auxiliar para simular o recebimento de uma mensagem WhatsApp durante testes locais.
-        /// </summary>
         [AllowAnonymous]
         [HttpPost("simular")]
         public async Task<IActionResult> SimularMensagem([FromBody] SimularMensagemWhatsAppDto dto)

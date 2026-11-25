@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using Teledesk.API.Services.Interfaces;
 
 namespace Teledesk.API.Services
@@ -36,9 +37,8 @@ namespace Teledesk.API.Services
                 ? customAccessToken
                 : _configuration["WhatsAppSettings:WahaApiKey"];
 
-            var chatId = destinatarioWaId.Contains('@')
-                ? destinatarioWaId.Trim()
-                : $"{destinatarioWaId.Trim().TrimStart('+')}@c.us";
+            // Preserva @lid ou @c.us quando já presente; adiciona @c.us apenas para números puros
+            var chatId = FormatarChatIdParaWaha(destinatarioWaId);
 
             try
             {
@@ -63,8 +63,8 @@ namespace Teledesk.API.Services
                 {
                     var erro = await response.Content.ReadAsStringAsync(cancellationToken);
                     _logger.LogError(
-                        "Falha ao enviar mensagem pelo WAHA ({StatusCode}) na sessão '{Session}': {Erro}",
-                        response.StatusCode, session, erro);
+                        "Falha ao enviar mensagem pelo WAHA ({StatusCode}) para '{ChatId}' na sessão '{Session}': {Erro}",
+                        response.StatusCode, chatId, session, erro);
                     return false;
                 }
 
@@ -75,7 +75,6 @@ namespace Teledesk.API.Services
             }
             catch (HttpRequestException ex)
             {
-                // Permite usar o Simulador Desktop mesmo quando o container WAHA não estiver em execução
                 _logger.LogWarning(
                     "WAHA inacessível em {Url} ({Erro}). [Simulado | Sessão: {Session} -> {ChatId}]: {Texto}",
                     wahaBaseUrl, ex.Message, session, chatId, texto);
@@ -86,6 +85,71 @@ namespace Teledesk.API.Services
                 _logger.LogError(ex, "Erro inesperado ao enviar mensagem para o WAHA.");
                 return false;
             }
+        }
+
+        public async Task<string?> ResolverLidParaTelefoneAsync(
+            string session,
+            string lid,
+            string? customAccessToken = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(lid))
+                return null;
+
+            var wahaBaseUrl = (_configuration["WhatsAppSettings:WahaBaseUrl"] ?? "http://localhost:3000").TrimEnd('/');
+            var apiKey = !string.IsNullOrWhiteSpace(customAccessToken)
+                ? customAccessToken
+                : _configuration["WhatsAppSettings:WahaApiKey"];
+
+            try
+            {
+                var client = _httpClientFactory.CreateClient("WhatsAppCloud");
+                var url = $"{wahaBaseUrl}/api/{Uri.EscapeDataString(session)}/lids/{Uri.EscapeDataString(lid)}";
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                if (!string.IsNullOrWhiteSpace(apiKey))
+                {
+                    request.Headers.Add("X-Api-Key", apiKey);
+                }
+
+                var response = await client.SendAsync(request, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                    return null;
+
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("pn", out var pnProp))
+                {
+                    var pn = pnProp.GetString();
+                    if (!string.IsNullOrWhiteSpace(pn))
+                    {
+                        var idx = pn.IndexOf('@');
+                        return idx > 0 ? pn[..idx] : pn;
+                    }
+                }
+            }
+            catch
+            {
+                // Se o store de LIDs não estiver ativo no WAHA, segue com o próprio @lid
+            }
+
+            return null;
+        }
+
+        private static string FormatarChatIdParaWaha(string destinatarioWaId)
+        {
+            var limpo = destinatarioWaId.Trim();
+            if (limpo.EndsWith("@s.whatsapp.net", StringComparison.OrdinalIgnoreCase))
+            {
+                return limpo[..limpo.IndexOf('@')] + "@c.us";
+            }
+
+            if (limpo.Contains('@'))
+            {
+                return limpo;
+            }
+
+            return $"{limpo.TrimStart('+')}@c.us";
         }
     }
 }

@@ -8,5 +8,11 @@ namespace Teledesk.API.Services.Interfaces
             string texto,
             string? customAccessToken = null,
             CancellationToken cancellationToken = default);
+
+        Task<string?> ResolverLidParaTelefoneAsync(
+            string session,
+            string lid,
+            string? customAccessToken = null,
+            CancellationToken cancellationToken = default);
     }
 }

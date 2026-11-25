@@ -144,6 +144,9 @@ namespace Teledesk.API.DTOs
         [JsonPropertyName("notifyName")]
         public string? NotifyName { get; set; }
 
+        [JsonPropertyName("participant")]
+        public string? Participant { get; set; }
+
         [JsonPropertyName("_data")]
         public WahaRawDataDto? Data { get; set; }
     }
@@ -153,8 +156,26 @@ namespace Teledesk.API.DTOs
         [JsonPropertyName("notifyName")]
         public string? NotifyName { get; set; }
 
-        [JsonPropertyName("pushname")]
+        [JsonPropertyName("pushName")]
         public string? PushName { get; set; }
+
+        [JsonPropertyName("key")]
+        public WahaMessageKeyDto? Key { get; set; }
+    }
+
+    public class WahaMessageKeyDto
+    {
+        [JsonPropertyName("remoteJid")]
+        public string? RemoteJid { get; set; }
+
+        [JsonPropertyName("remoteJidAlt")]
+        public string? RemoteJidAlt { get; set; }
+
+        [JsonPropertyName("participantAlt")]
+        public string? ParticipantAlt { get; set; }
+
+        [JsonPropertyName("senderPn")]
+        public string? SenderPn { get; set; }
     }
 
     public class SimularMensagemWhatsAppDto

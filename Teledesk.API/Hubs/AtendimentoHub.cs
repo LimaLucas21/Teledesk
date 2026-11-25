@@ -71,9 +71,12 @@ namespace Teledesk.API.Hubs
                 .Include(a => a.NumeroWhatsApp)
                 .FirstOrDefaultAsync(a => a.Id == atendimentoId);
 
-            // Trava de concorrência: só permite assumir se ainda estiver AguardandoAtendente
-            if (atendimento == null || atendimento.Status != StatusAtendimento.AguardandoAtendente)
+            // Trava de concorrência: permite assumir se estiver AguardandoAtendente ou ainda na URA
+            if (atendimento == null ||
+                (atendimento.Status != StatusAtendimento.AguardandoAtendente && atendimento.Status != StatusAtendimento.EmUra))
+            {
                 return false;
+            }
 
             var atendente = await _context.Atendentes
                 .Include(a => a.Setores)
@@ -88,6 +91,17 @@ namespace Teledesk.API.Hubs
                 !atendente.Setores.Any(s => s.Id == atendimento.SetorId.Value))
             {
                 return false;
+            }
+
+            // Caso o operador assuma diretamente um chamado que estava na URA sem setor definido
+            if (!atendimento.SetorId.HasValue)
+            {
+                var primeiroSetor = atendente.Setores.FirstOrDefault(s => s.Ativo);
+                if (primeiroSetor != null)
+                {
+                    atendimento.SetorId = primeiroSetor.Id;
+                    atendimento.Setor = primeiroSetor;
+                }
             }
 
             atendimento.AtendenteId = idAutenticado.Value;
@@ -212,7 +226,7 @@ namespace Teledesk.API.Hubs
                 .Include(a => a.Atendente)
                 .Include(a => a.Setor)
                 .Include(a => a.NumeroWhatsApp)
-                .Where(a => a.Status == StatusAtendimento.AguardandoAtendente || a.Status == StatusAtendimento.EmAtendimento);
+                .Where(a => a.Status != StatusAtendimento.Finalizado);
 
             var atendenteId = ObterAtendenteIdContexto();
             if (atendenteId.HasValue)
@@ -243,7 +257,7 @@ namespace Teledesk.API.Hubs
                     UsernameCliente = a.Contato.Username,
                     WhatsAppId = a.Contato.WhatsAppId,
                     SetorId = a.SetorId,
-                    SetorNome = a.Setor != null ? a.Setor.Nome : "Sem Setor",
+                    SetorNome = a.Setor != null ? a.Setor.Nome : (a.Status == StatusAtendimento.EmUra ? "Na URA" : "Sem Setor"),
                     NumeroWhatsAppId = a.NumeroWhatsAppId,
                     NumeroExibicao = a.NumeroWhatsApp != null ? a.NumeroWhatsApp.NumeroExibicao : null,
                     Status = a.Status,

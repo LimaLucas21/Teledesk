@@ -15,6 +15,10 @@ services:
       - WAHA_DASHBOARD_PASSWORD=admin123
       - WHATSAPP_SWAGGER_USERNAME=admin
       - WHATSAPP_SWAGGER_PASSWORD=admin123
+      - WHATSAPP_NOWEB_STORE_ENABLED=true
+      - WHATSAPP_NOWEB_STORE_FULL_SYNC=false
+    volumes:
+      - ./.waha-sessions:/app/.sessions
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
