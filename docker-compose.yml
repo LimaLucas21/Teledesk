@@ -6,19 +6,16 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - WHATSAPP_DEFAULT_ENGINE=NOWEB
+      - WHATSAPP_DEFAULT_ENGINE=WEBJS
       - WHATSAPP_START_SESSION=default
       - WHATSAPP_HOOK_URL=http://host.docker.internal:5000/api/webhook/whatsapp
-      - WHATSAPP_HOOK_EVENTS=message
+      - WHATSAPP_HOOK_EVENTS=message,message.any
       - WAHA_API_KEY=teledesk123
       - WAHA_DASHBOARD_USERNAME=admin
       - WAHA_DASHBOARD_PASSWORD=admin123
       - WHATSAPP_SWAGGER_USERNAME=admin
       - WHATSAPP_SWAGGER_PASSWORD=admin123
-      - WHATSAPP_NOWEB_STORE_ENABLED=true
-      - WHATSAPP_NOWEB_STORE_FULL_SYNC=false
     volumes:
       - ./.waha-sessions:/app/.sessions
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
