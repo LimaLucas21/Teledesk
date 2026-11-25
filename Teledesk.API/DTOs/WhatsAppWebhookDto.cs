@@ -161,6 +161,18 @@ namespace Teledesk.API.DTOs
 
         [JsonPropertyName("key")]
         public WahaMessageKeyDto? Key { get; set; }
+
+        [JsonPropertyName("Info")]
+        public WahaGowsInfoDto? Info { get; set; }
+    }
+
+    public class WahaGowsInfoDto
+    {
+        [JsonPropertyName("PushName")]
+        public string? PushName { get; set; }
+
+        [JsonPropertyName("SenderAlt")]
+        public string? SenderAlt { get; set; }
     }
 
     public class WahaMessageKeyDto
