@@ -10,6 +10,7 @@ namespace Teledesk.API.Models
         public int AtendimentoId { get; set; }
         public Atendimento Atendimento { get; set; } = null!;
 
+        public string? WhatsAppMessageId { get; set; }
         public string Texto { get; set; } = string.Empty;
         public OrigemMensagem Origem { get; set; }
         public DateTime DataEnvio { get; set; } = DateTime.UtcNow;

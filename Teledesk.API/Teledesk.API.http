@@ -1,6 +1,24 @@
-@Teledesk.API_HostAddress = http://localhost:5075
+@Teledesk.API_HostAddress = http://localhost:5000
 
-GET {{Teledesk.API_HostAddress}}/weatherforecast/
-Accept: application/json
+### Login (Admin padrão criado pelo Seed)
+POST {{Teledesk.API_HostAddress}}/api/atendentes/login
+Content-Type: application/json
 
-###
+{
+  "email": "admin@teledesk.com",
+  "senha": "admin123"
+}
+
+### Simular Mensagem Recebida no WhatsApp (Número Principal com URA)
+POST {{Teledesk.API_HostAddress}}/api/webhook/whatsapp/simular
+Content-Type: application/json
+
+{
+  "phoneNumberId": "100000000000000",
+  "waId": "5511999998888",
+  "nomeCliente": "Maria Souza",
+  "texto": "Olá, preciso de atendimento"
+}
+
+### Verificação GET do Webhook da Meta
+GET {{Teledesk.API_HostAddress}}/api/webhook/whatsapp?hub.mode=subscribe&hub.verify_token=teledesk_verify_token&hub.challenge=123456

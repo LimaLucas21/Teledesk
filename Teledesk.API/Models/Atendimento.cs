@@ -10,9 +10,17 @@ namespace Teledesk.API.Models
         public int ContatoId { get; set; }
         public Contato Contato { get; set; } = null!;
 
-        // FK e Propriedade de Navegação para o Atendente (Opcional - pode ser nulo se estiver na URA)
+        // FK e Propriedade de Navegação para o Atendente (Opcional - nulo enquanto na URA ou na fila)
         public int? AtendenteId { get; set; }
         public Atendente? Atendente { get; set; }
+
+        // FK e Propriedade de Navegação para o Setor escolhido/vinculado
+        public int? SetorId { get; set; }
+        public Setor? Setor { get; set; }
+
+        // FK e Propriedade de Navegação para o Número WhatsApp que recebeu o atendimento
+        public int? NumeroWhatsAppId { get; set; }
+        public NumeroWhatsApp? NumeroWhatsApp { get; set; }
 
         public StatusAtendimento Status { get; set; } = StatusAtendimento.EmUra;
         public DateTime DataInicio { get; set; } = DateTime.UtcNow;

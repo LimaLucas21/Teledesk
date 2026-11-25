@@ -1,44 +1,96 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Teledesk.API.Data;
 using Teledesk.API.DTOs;
 using Teledesk.API.Models;
 using Teledesk.API.Models.Enums;
-using Telegram.Bot;
+using Teledesk.API.Services.Interfaces;
 
 namespace Teledesk.API.Hubs
 {
+    [Authorize]
     public class AtendimentoHub : Hub
     {
         private readonly TeledeskDbContext _context;
-        private readonly ITelegramBotClient _botClient;
+        private readonly IWhatsAppService _whatsAppService;
         private readonly ILogger<AtendimentoHub> _logger;
 
         public AtendimentoHub(
             TeledeskDbContext context,
-            ITelegramBotClient botClient,
+            IWhatsAppService whatsAppService,
             ILogger<AtendimentoHub> logger)
         {
             _context = context;
-            _botClient = botClient;
+            _whatsAppService = whatsAppService;
             _logger = logger;
         }
 
-        /// <summary>
-        /// O atendente assume um atendimento que está na fila de espera.
-        /// </summary>
-        public async Task<bool> AssumirAtendimento(int atendimentoId, int atendenteId)
+        public override async Task OnConnectedAsync()
         {
-            var atendimento = await _context.Atendimentos
-                .Include(a => a.Contato)
-                .FirstOrDefaultAsync(a => a.Id == atendimentoId);
+            var atendenteId = ObterAtendenteIdContexto();
+            if (atendenteId.HasValue)
+            {
+                var atendente = await _context.Atendentes
+                    .Include(a => a.Setores)
+                    .FirstOrDefaultAsync(a => a.Id == atendenteId.Value);
 
-            if (atendimento == null)
+                if (atendente != null)
+                {
+                    List<int> setoresIds = atendente.Perfil == PerfilAtendente.Admin
+                        ? await _context.Setores.Where(s => s.Ativo).Select(s => s.Id).ToListAsync()
+                        : atendente.Setores.Where(s => s.Ativo).Select(s => s.Id).ToList();
+
+                    foreach (var setorId in setoresIds)
+                    {
+                        await Groups.AddToGroupAsync(Context.ConnectionId, $"setor-{setorId}");
+                    }
+
+                    _logger.LogInformation(
+                        "Atendente #{Id} ({Nome}) conectado ao SignalR nos setores: [{Setores}]",
+                        atendente.Id, atendente.Nome, string.Join(", ", setoresIds));
+                }
+            }
+
+            await base.OnConnectedAsync();
+        }
+
+        /// <summary>
+        /// O atendente assume um atendimento que está na fila de espera (com trava contra concorrência).
+        /// </summary>
+        public async Task<bool> AssumirAtendimento(int atendimentoId)
+        {
+            var idAutenticado = ObterAtendenteIdContexto();
+            if (!idAutenticado.HasValue)
                 return false;
 
-            var atendente = await _context.Atendentes.FindAsync(atendenteId);
+            var atendimento = await _context.Atendimentos
+                .Include(a => a.Contato)
+                .Include(a => a.Setor)
+                .Include(a => a.NumeroWhatsApp)
+                .FirstOrDefaultAsync(a => a.Id == atendimentoId);
 
-            atendimento.AtendenteId = atendenteId;
+            // Trava de concorrência: só permite assumir se ainda estiver AguardandoAtendente
+            if (atendimento == null || atendimento.Status != StatusAtendimento.AguardandoAtendente)
+                return false;
+
+            var atendente = await _context.Atendentes
+                .Include(a => a.Setores)
+                .FirstOrDefaultAsync(a => a.Id == idAutenticado.Value);
+
+            if (atendente == null)
+                return false;
+
+            // Garante que atendente comum só assuma atendimento do seu setor
+            if (atendente.Perfil != PerfilAtendente.Admin &&
+                atendimento.SetorId.HasValue &&
+                !atendente.Setores.Any(s => s.Id == atendimento.SetorId.Value))
+            {
+                return false;
+            }
+
+            atendimento.AtendenteId = idAutenticado.Value;
             atendimento.Status = StatusAtendimento.EmAtendimento;
             await _context.SaveChangesAsync();
 
@@ -48,28 +100,33 @@ namespace Teledesk.API.Hubs
                 ContatoId = atendimento.ContatoId,
                 NomeCliente = atendimento.Contato.Nome,
                 UsernameCliente = atendimento.Contato.Username,
-                TelegramChatId = atendimento.Contato.TelegramChatId,
+                WhatsAppId = atendimento.Contato.WhatsAppId,
+                SetorId = atendimento.SetorId,
+                SetorNome = atendimento.Setor?.Nome,
+                NumeroWhatsAppId = atendimento.NumeroWhatsAppId,
+                NumeroExibicao = atendimento.NumeroWhatsApp?.NumeroExibicao,
                 Status = atendimento.Status,
-                AtendenteId = atendenteId,
-                AtendenteNome = atendente?.Nome,
+                AtendenteId = idAutenticado.Value,
+                AtendenteNome = atendente.Nome,
                 DataInicio = atendimento.DataInicio
             };
 
-            // Notifica todos os atendentes conectados sobre a mudança de status
-            await Clients.All.SendAsync("AtendimentoAssumido", dto);
+            await EnviarParaSetorAsync(atendimento.SetorId, "AtendimentoAssumido", dto);
 
-            // Notifica o cliente no Telegram
-            var nomeAtendente = atendente?.Nome ?? "um operador";
-            await _botClient.SendMessage(
-                atendimento.Contato.TelegramChatId,
-                $"Olá! Sou {nomeAtendente} e darei continuidade ao seu atendimento. Como posso te ajudar?");
+            var phoneNumberId = atendimento.NumeroWhatsApp?.PhoneNumberId ?? "100000000000000";
+            var setorTexto = atendimento.Setor != null ? $" do setor *{atendimento.Setor.Nome}*" : "";
+            await _whatsAppService.EnviarMensagemTextoAsync(
+                phoneNumberId,
+                atendimento.Contato.WhatsAppId,
+                $"Olá! Sou *{atendente.Nome}*{setorTexto} e darei continuidade ao seu atendimento. Como posso te ajudar?",
+                atendimento.NumeroWhatsApp?.AccessToken);
 
-            _logger.LogInformation("Atendimento #{Id} assumido pelo Atendente #{AtendenteId}", atendimentoId, atendenteId);
+            _logger.LogInformation("Atendimento #{Id} assumido pelo Atendente #{AtendenteId}", atendimentoId, idAutenticado.Value);
             return true;
         }
 
         /// <summary>
-        /// O atendente envia uma mensagem de texto para o cliente no Telegram.
+        /// O atendente envia uma mensagem de texto para o WhatsApp do cliente pelo número que originou o chamado.
         /// </summary>
         public async Task<bool> EnviarMensagemParaCliente(int atendimentoId, string texto)
         {
@@ -78,15 +135,19 @@ namespace Teledesk.API.Hubs
 
             var atendimento = await _context.Atendimentos
                 .Include(a => a.Contato)
+                .Include(a => a.NumeroWhatsApp)
                 .FirstOrDefaultAsync(a => a.Id == atendimentoId);
 
             if (atendimento == null || atendimento.Status != StatusAtendimento.EmAtendimento)
                 return false;
 
-            // 1. Enviar mensagem para o cliente no Telegram
-            await _botClient.SendMessage(atendimento.Contato.TelegramChatId, texto);
+            var phoneNumberId = atendimento.NumeroWhatsApp?.PhoneNumberId ?? "100000000000000";
+            await _whatsAppService.EnviarMensagemTextoAsync(
+                phoneNumberId,
+                atendimento.Contato.WhatsAppId,
+                texto,
+                atendimento.NumeroWhatsApp?.AccessToken);
 
-            // 2. Persistir no banco de dados como mensagem do Atendente
             var mensagem = new Mensagem
             {
                 AtendimentoId = atendimentoId,
@@ -107,8 +168,7 @@ namespace Teledesk.API.Hubs
                 DataEnvio = mensagem.DataEnvio
             };
 
-            // Notifica os painéis conectados para refletir a mensagem no chat aberto
-            await Clients.All.SendAsync("NovaMensagemRecebida", mensagemDto);
+            await EnviarParaSetorAsync(atendimento.SetorId, "NovaMensagemRecebida", mensagemDto);
             return true;
         }
 
@@ -119,6 +179,7 @@ namespace Teledesk.API.Hubs
         {
             var atendimento = await _context.Atendimentos
                 .Include(a => a.Contato)
+                .Include(a => a.NumeroWhatsApp)
                 .FirstOrDefaultAsync(a => a.Id == atendimentoId);
 
             if (atendimento == null)
@@ -128,27 +189,51 @@ namespace Teledesk.API.Hubs
             atendimento.DataFim = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            // Notifica os painéis conectados
-            await Clients.All.SendAsync("AtendimentoFinalizado", atendimentoId);
+            await EnviarParaSetorAsync(atendimento.SetorId, "AtendimentoFinalizado", atendimentoId);
 
-            // Notifica o cliente no Telegram
-            await _botClient.SendMessage(
-                atendimento.Contato.TelegramChatId,
-                "Seu atendimento foi finalizado. Agradecemos pelo contato! Se precisar de mais alguma informação, basta enviar uma nova mensagem.");
+            var phoneNumberId = atendimento.NumeroWhatsApp?.PhoneNumberId ?? "100000000000000";
+            await _whatsAppService.EnviarMensagemTextoAsync(
+                phoneNumberId,
+                atendimento.Contato.WhatsAppId,
+                "Seu atendimento foi finalizado. Agradecemos pelo contato! Se precisar de algo mais, basta enviar uma nova mensagem.",
+                atendimento.NumeroWhatsApp?.AccessToken);
 
             _logger.LogInformation("Atendimento #{Id} finalizado com sucesso.", atendimentoId);
             return true;
         }
 
         /// <summary>
-        /// Retorna a lista atual de atendimentos na fila e em atendimento.
+        /// Retorna a lista de atendimentos na fila e em atendimento filtrada pelos setores do atendente logado.
         /// </summary>
-        public async Task<List<AtendimentoDto>> ObterFilaAtendimento()
+        public async Task<List<AtendimentoDto>> ObterFilaAtendimento(int? filtroSetorId = null)
         {
-            return await _context.Atendimentos
+            var query = _context.Atendimentos
                 .Include(a => a.Contato)
                 .Include(a => a.Atendente)
-                .Where(a => a.Status == StatusAtendimento.AguardandoAtendente || a.Status == StatusAtendimento.EmAtendimento)
+                .Include(a => a.Setor)
+                .Include(a => a.NumeroWhatsApp)
+                .Where(a => a.Status == StatusAtendimento.AguardandoAtendente || a.Status == StatusAtendimento.EmAtendimento);
+
+            var atendenteId = ObterAtendenteIdContexto();
+            if (atendenteId.HasValue)
+            {
+                var atendente = await _context.Atendentes
+                    .Include(a => a.Setores)
+                    .FirstOrDefaultAsync(a => a.Id == atendenteId.Value);
+
+                if (atendente != null && atendente.Perfil != PerfilAtendente.Admin)
+                {
+                    var meusSetoresIds = atendente.Setores.Select(s => s.Id).ToList();
+                    query = query.Where(a => !a.SetorId.HasValue || meusSetoresIds.Contains(a.SetorId.Value));
+                }
+            }
+
+            if (filtroSetorId.HasValue && filtroSetorId.Value > 0)
+            {
+                query = query.Where(a => a.SetorId == filtroSetorId.Value);
+            }
+
+            return await query
                 .OrderBy(a => a.DataInicio)
                 .Select(a => new AtendimentoDto
                 {
@@ -156,7 +241,11 @@ namespace Teledesk.API.Hubs
                     ContatoId = a.ContatoId,
                     NomeCliente = a.Contato.Nome,
                     UsernameCliente = a.Contato.Username,
-                    TelegramChatId = a.Contato.TelegramChatId,
+                    WhatsAppId = a.Contato.WhatsAppId,
+                    SetorId = a.SetorId,
+                    SetorNome = a.Setor != null ? a.Setor.Nome : "Sem Setor",
+                    NumeroWhatsAppId = a.NumeroWhatsAppId,
+                    NumeroExibicao = a.NumeroWhatsApp != null ? a.NumeroWhatsApp.NumeroExibicao : null,
                     Status = a.Status,
                     AtendenteId = a.AtendenteId,
                     AtendenteNome = a.Atendente != null ? a.Atendente.Nome : null,
@@ -183,6 +272,24 @@ namespace Teledesk.API.Hubs
                     DataEnvio = m.DataEnvio
                 })
                 .ToListAsync();
+        }
+
+        private int? ObterAtendenteIdContexto()
+        {
+            var sub = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(sub, out int id) ? id : null;
+        }
+
+        private async Task EnviarParaSetorAsync(int? setorId, string evento, object payload)
+        {
+            if (setorId.HasValue)
+            {
+                await Clients.Group($"setor-{setorId.Value}").SendAsync(evento, payload);
+            }
+            else
+            {
+                await Clients.All.SendAsync(evento, payload);
+            }
         }
     }
 }

@@ -22,6 +22,36 @@ namespace Teledesk.API.Migrations
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
+            modelBuilder.Entity("AtendenteSetor", b =>
+                {
+                    b.Property<int>("AtendentesId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SetoresId")
+                        .HasColumnType("int");
+
+                    b.HasKey("AtendentesId", "SetoresId");
+
+                    b.HasIndex("SetoresId");
+
+                    b.ToTable("AtendenteSetores", (string)null);
+                });
+
+            modelBuilder.Entity("NumeroWhatsAppSetor", b =>
+                {
+                    b.Property<int>("NumerosWhatsAppId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SetoresId")
+                        .HasColumnType("int");
+
+                    b.HasKey("NumerosWhatsAppId", "SetoresId");
+
+                    b.HasIndex("SetoresId");
+
+                    b.ToTable("NumeroWhatsAppSetores", (string)null);
+                });
+
             modelBuilder.Entity("Teledesk.API.Models.Atendente", b =>
                 {
                     b.Property<int>("Id")
@@ -29,6 +59,9 @@ namespace Teledesk.API.Migrations
                         .HasColumnType("int");
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<DateTime>("DataCriacao")
                         .HasColumnType("datetime(6)");
@@ -43,10 +76,13 @@ namespace Teledesk.API.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("varchar(150)");
 
-                    b.Property<string>("Senha")
+                    b.Property<int>("Perfil")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SenhaHash")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("varchar(150)");
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -79,6 +115,12 @@ namespace Teledesk.API.Migrations
                     b.Property<DateTime>("DataInicio")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<int?>("NumeroWhatsAppId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("SetorId")
+                        .HasColumnType("int");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -87,6 +129,10 @@ namespace Teledesk.API.Migrations
                     b.HasIndex("AtendenteId");
 
                     b.HasIndex("ContatoId");
+
+                    b.HasIndex("NumeroWhatsAppId");
+
+                    b.HasIndex("SetorId");
 
                     b.ToTable("Atendimentos");
                 });
@@ -107,16 +153,18 @@ namespace Teledesk.API.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("varchar(150)");
 
-                    b.Property<long>("TelegramChatId")
-                        .HasColumnType("bigint");
-
                     b.Property<string>("Username")
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)");
 
+                    b.Property<string>("WhatsAppId")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("TelegramChatId")
+                    b.HasIndex("WhatsAppId")
                         .IsUnique();
 
                     b.ToTable("Contatos");
@@ -143,11 +191,123 @@ namespace Teledesk.API.Migrations
                         .IsRequired()
                         .HasColumnType("longtext");
 
+                    b.Property<string>("WhatsAppMessageId")
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AtendimentoId");
 
+                    b.HasIndex("WhatsAppMessageId")
+                        .IsUnique();
+
                     b.ToTable("Mensagens");
+                });
+
+            modelBuilder.Entity("Teledesk.API.Models.NumeroWhatsApp", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AccessToken")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("NomeIdentificacao")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
+                    b.Property<string>("NumeroExibicao")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)");
+
+                    b.Property<string>("PhoneNumberId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PhoneNumberId")
+                        .IsUnique();
+
+                    b.ToTable("NumerosWhatsApp");
+                });
+
+            modelBuilder.Entity("Teledesk.API.Models.Setor", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Descricao")
+                        .HasMaxLength(250)
+                        .HasColumnType("varchar(250)");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<int>("OrdemUra")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Nome")
+                        .IsUnique();
+
+                    b.ToTable("Setores");
+                });
+
+            modelBuilder.Entity("AtendenteSetor", b =>
+                {
+                    b.HasOne("Teledesk.API.Models.Atendente", null)
+                        .WithMany()
+                        .HasForeignKey("AtendentesId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Teledesk.API.Models.Setor", null)
+                        .WithMany()
+                        .HasForeignKey("SetoresId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NumeroWhatsAppSetor", b =>
+                {
+                    b.HasOne("Teledesk.API.Models.NumeroWhatsApp", null)
+                        .WithMany()
+                        .HasForeignKey("NumerosWhatsAppId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Teledesk.API.Models.Setor", null)
+                        .WithMany()
+                        .HasForeignKey("SetoresId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Teledesk.API.Models.Atendimento", b =>
@@ -163,9 +323,23 @@ namespace Teledesk.API.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Teledesk.API.Models.NumeroWhatsApp", "NumeroWhatsApp")
+                        .WithMany("Atendimentos")
+                        .HasForeignKey("NumeroWhatsAppId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Teledesk.API.Models.Setor", "Setor")
+                        .WithMany("Atendimentos")
+                        .HasForeignKey("SetorId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Atendente");
 
                     b.Navigation("Contato");
+
+                    b.Navigation("NumeroWhatsApp");
+
+                    b.Navigation("Setor");
                 });
 
             modelBuilder.Entity("Teledesk.API.Models.Mensagem", b =>
@@ -190,6 +364,16 @@ namespace Teledesk.API.Migrations
                 });
 
             modelBuilder.Entity("Teledesk.API.Models.Contato", b =>
+                {
+                    b.Navigation("Atendimentos");
+                });
+
+            modelBuilder.Entity("Teledesk.API.Models.NumeroWhatsApp", b =>
+                {
+                    b.Navigation("Atendimentos");
+                });
+
+            modelBuilder.Entity("Teledesk.API.Models.Setor", b =>
                 {
                     b.Navigation("Atendimentos");
                 });
